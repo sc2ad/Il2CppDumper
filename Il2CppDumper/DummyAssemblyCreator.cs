@@ -281,7 +281,12 @@ namespace Il2CppDumper
                 var engine = Assemblies.Find(x => x.MainModule.Types.Any(t => t.Namespace == "UnityEngine" && t.Name == "SerializeField"));
                 if (engine != null)
                 {
-                    var serializeField = engine.MainModule.Types.First(x => x.Name == "SerializeField").Methods.First();
+                    var nullAssembly = Assemblies.Find(x => x.MainModule.Types.Any(t => t.Name == "NullAllowed"));
+                    var desiredUnityAttributes = new Dictionary<string, MethodDefinition>
+                    {
+                        { "SerializeField", engine.MainModule.Types.First(x => x.Name == "SerializeField").Methods.First() },
+                        { "NullAllowed", nullAssembly.MainModule.Types.First(x => x.Name == "NullAllowed").Methods.First() }
+                    };
                     foreach (var imageDef in metadata.imageDefs)
                     {
                         var typeEnd = imageDef.typeStart + imageDef.typeCount;
@@ -309,10 +314,13 @@ namespace Il2CppDumper
                                         {
                                             var klass = metadata.typeDefs[attributeType.data.klassIndex];
                                             var attributeName = metadata.GetStringFromIndex(klass.nameIndex);
-                                            if (attributeName == "SerializeField")
+                                            foreach (string an in desiredUnityAttributes.Keys)
                                             {
-                                                var customAttribute = new CustomAttribute(typeDefinition.Module.Import(serializeField));
-                                                fieldDefinition.CustomAttributes.Add(customAttribute);
+                                                if (attributeName == an)
+                                                {
+                                                    var customAttribute = new CustomAttribute(typeDefinition.Module.Import(desiredUnityAttributes[an]));
+                                                    fieldDefinition.CustomAttributes.Add(customAttribute);
+                                                }
                                             }
                                         }
                                     }
