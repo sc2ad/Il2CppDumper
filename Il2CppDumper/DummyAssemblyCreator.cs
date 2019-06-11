@@ -294,6 +294,9 @@ namespace Il2CppDumper
                         {
                             var typeDef = metadata.typeDefs[index];
                             var typeDefinition = typeDefinitionDic[index];
+                            // Create Dumpity Methods
+                            var readMethod = Dumpity.CreateReadMethod(typeDefinition);
+                            var writeMethod = Dumpity.CreateWriteMethod(typeDefinition);
                             //field
                             var fieldEnd = typeDef.fieldStart + typeDef.field_count;
                             for (var i = typeDef.fieldStart; i < fieldEnd; ++i)
@@ -314,6 +317,12 @@ namespace Il2CppDumper
                                         {
                                             var klass = metadata.typeDefs[attributeType.data.klassIndex];
                                             var attributeName = metadata.GetStringFromIndex(klass.nameIndex);
+                                            if (attributeName == "SerializeField")
+                                            {
+                                                // Add dumpity stuff here
+                                                readMethod.Add(fieldDefinition);
+                                                writeMethod.Add(fieldDefinition);
+                                            }
                                             foreach (string an in desiredUnityAttributes.Keys)
                                             {
                                                 if (attributeName == an)
@@ -326,6 +335,8 @@ namespace Il2CppDumper
                                     }
                                 }
                             }
+                            typeDefinition.Methods.Add(readMethod.ToMethod());
+                            typeDefinition.Methods.Add(writeMethod.ToMethod());
                         }
                     }
                 }
