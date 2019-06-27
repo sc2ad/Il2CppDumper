@@ -167,7 +167,7 @@ namespace Il2CppDumper
             }
         }
 
-        public long GetFieldOffsetFromIndex(int typeIndex, int fieldIndexInType, int fieldIndex)
+        public long GetFieldOffsetFromIndex(int typeIndex, int fieldIndexInType, int fieldIndex, bool isStruct = false)
         {
             if (isNew21)
             {
@@ -182,7 +182,7 @@ namespace Il2CppDumper
                     if ((long)pos <= BaseStream.Length - 4)
                     {
                         Position = pos;
-                        return ReadInt32();
+                        return isStruct ? ReadInt32() - 8 : ReadInt32();
                     }
                     return -1;
                 }

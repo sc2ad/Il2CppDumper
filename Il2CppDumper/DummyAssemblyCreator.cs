@@ -119,8 +119,11 @@ namespace Il2CppDumper
                             }
                         }
                         //fieldOffset
-                        var fieldOffset = il2cpp.GetFieldOffsetFromIndex(index, i - typeDef.fieldStart, i);
-                        if (fieldOffset > 0)
+                        //var parent = il2cpp.types[typeDef.parentIndex];
+                        //var parentName = Program.GetTypeName(parent);
+                        bool isStruct = !fieldDefinition.DeclaringType.IsClass && !fieldDefinition.DeclaringType.IsEnum && fieldDefinition.DeclaringType.IsValueType;
+                        var fieldOffset = il2cpp.GetFieldOffsetFromIndex(index, i - typeDef.fieldStart, i, isStruct);
+                        if (fieldOffset >= 0)
                         {
                             var customAttribute = new CustomAttribute(typeDefinition.Module.Import(fieldOffsetAttribute));
                             var offset = new CustomAttributeNamedArgument("Offset", new CustomAttributeArgument(stringType, $"0x{fieldOffset:X}"));
