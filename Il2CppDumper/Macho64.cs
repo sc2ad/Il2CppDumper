@@ -54,6 +54,7 @@ namespace Il2CppDumper
             return uiAddr - (section.addr - section.offset);
         }
 
+        [Obsolete]
         public override bool Search()
         {
             if (version < 23)
@@ -181,12 +182,11 @@ namespace Il2CppDumper
             var bss = sections.Where(x => x.flags == 1u).ToArray();
 
             var plusSearch = new PlusSearch(this, methodCount, typeDefinitionsCount, maxMetadataUsages);
-            plusSearch.SetSearch(data);
-            plusSearch.SetPointerRangeFirst(data);
-            plusSearch.SetPointerRangeSecond(code);
-            var codeRegistration = plusSearch.FindCodeRegistration64Bit();
-            plusSearch.SetPointerRangeSecond(bss);
-            var metadataRegistration = plusSearch.FindMetadataRegistration64Bit();
+            plusSearch.SetSection(SearchSectionType.Exec, code);
+            plusSearch.SetSection(SearchSectionType.Data, data);
+            plusSearch.SetSection(SearchSectionType.Bss, bss);
+            var codeRegistration = plusSearch.FindCodeRegistration();
+            var metadataRegistration = plusSearch.FindMetadataRegistration();
             return AutoInit(codeRegistration, metadataRegistration);
         }
 

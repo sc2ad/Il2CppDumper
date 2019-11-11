@@ -97,6 +97,7 @@ namespace Il2CppDumper
             return uiAddr - segment.MemoryOffset + segment.FileOffset;
         }
 
+        [Obsolete]
         public override bool Search()
         {
             return false;
@@ -105,12 +106,11 @@ namespace Il2CppDumper
         public override bool PlusSearch(int methodCount, int typeDefinitionsCount)
         {
             var plusSearch = new PlusSearch(this, methodCount, typeDefinitionsCount, maxMetadataUsages);
-            plusSearch.SetSearch(header.DataSegment);
-            plusSearch.SetPointerRangeFirst(header.DataSegment);
-            plusSearch.SetPointerRangeSecond(header.TextSegment);
-            var codeRegistration = plusSearch.FindCodeRegistration64Bit();
-            plusSearch.SetPointerRangeSecond(header.BssSegment);
-            var metadataRegistration = plusSearch.FindMetadataRegistration64Bit();
+            plusSearch.SetSection(SearchSectionType.Exec, header.TextSegment);
+            plusSearch.SetSection(SearchSectionType.Data, header.DataSegment);
+            plusSearch.SetSection(SearchSectionType.Bss, header.BssSegment);
+            var codeRegistration = plusSearch.FindCodeRegistration();
+            var metadataRegistration = plusSearch.FindMetadataRegistration();
             return AutoInit(codeRegistration, metadataRegistration);
         }
 
