@@ -308,8 +308,11 @@ namespace Il2CppDumper
                     var desiredUnityAttributes = new Dictionary<string, MethodDefinition>
                     {
                         { "SerializeField", engine.MainModule.Types.First(x => x.Name == "SerializeField").Methods.First() },
-                        { "NullAllowed", nullAssembly.MainModule.Types.First(x => x.Name == "NullAllowed").Methods.First() }
                     };
+                    if (nullAssembly != null)
+                    {
+                        desiredUnityAttributes.Add("NullAllowed", nullAssembly.MainModule.Types.First(x => x.Name == "NullAllowed").Methods.First());
+                    }
                     foreach (var imageDef in metadata.imageDefs)
                     {
                         var typeEnd = imageDef.typeStart + imageDef.typeCount;
