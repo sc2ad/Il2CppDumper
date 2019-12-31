@@ -182,7 +182,7 @@ namespace Il2CppDumper
                                     }
                                 }
                                 if (config.DumpFieldOffset)
-                                    writer.Write("; // 0x{0:X}\n", il2Cpp.GetFieldOffsetFromIndex(idx, i - typeDef.fieldStart, i));
+                                    writer.Write("; // 0x{0:X}\n", il2Cpp.GetFieldOffsetFromIndex(idx, i - typeDef.fieldStart, i, isStruct));
                                 else
                                     writer.Write(";\n");
                             }

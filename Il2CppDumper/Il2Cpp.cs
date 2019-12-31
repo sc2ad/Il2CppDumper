@@ -186,7 +186,7 @@ namespace Il2CppDumper
             return ReadClass<T>(MapVATR(addr));
         }
 
-        public int GetFieldOffsetFromIndex(int typeIndex, int fieldIndexInType, int fieldIndex)
+        public int GetFieldOffsetFromIndex(int typeIndex, int fieldIndexInType, int fieldIndex, bool isStruct = false)
         {
             try
             {
@@ -196,7 +196,7 @@ namespace Il2CppDumper
                     if (ptr > 0)
                     {
                         Position = MapVATR(ptr) + 4ul * (ulong)fieldIndexInType;
-                        return ReadInt32();
+                        return isStruct ? ReadInt32() - 16 : ReadInt32();
                     }
                     else
                     {

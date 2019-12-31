@@ -115,6 +115,13 @@ namespace Il2CppDumper
                     var typeDef = metadata.typeDefs[index];
                     var typeDefinition = typeDefinitionDic[index];
 
+                    bool isStruct = false;
+                    if (typeDef.parentIndex >= 0)
+                    {
+                        var parent = il2Cpp.types[typeDef.parentIndex];
+                        isStruct = parent?.type == Il2CppTypeEnum.IL2CPP_TYPE_VALUETYPE;
+                    }
+
                     //field
                     var fieldEnd = typeDef.fieldStart + typeDef.field_count;
                     for (var i = typeDef.fieldStart; i < fieldEnd; ++i)
@@ -136,7 +143,7 @@ namespace Il2CppDumper
                             }
                         }
                         //fieldOffset
-                        var fieldOffset = il2Cpp.GetFieldOffsetFromIndex(index, i - typeDef.fieldStart, i);
+                        var fieldOffset = il2Cpp.GetFieldOffsetFromIndex(index, i - typeDef.fieldStart, i, isStruct);
                         if (fieldOffset >= 0)
                         {
                             var customAttribute = new CustomAttribute(typeDefinition.Module.ImportReference(fieldOffsetAttribute));
