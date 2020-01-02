@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using Mono.Cecil;
@@ -20,7 +21,7 @@ namespace Il2CppDumper
         private TypeReference stringType;
         private Dictionary<string, MethodDefinition> knownAttributes = new Dictionary<string, MethodDefinition>();
 
-        public DummyAssemblyGenerator(Metadata metadata, Il2Cpp il2Cpp)
+        public DummyAssemblyGenerator(Metadata metadata, Il2Cpp il2Cpp, string netSDKPath = "")
         {
             this.metadata = metadata;
             this.il2Cpp = il2Cpp;
@@ -40,6 +41,36 @@ namespace Il2CppDumper
                 AssemblyResolver = resolver
             };
             resolver.Register(il2CppDummyDll);
+
+            AssemblyDefinition netSDK = null;
+            AssemblyDefinition createdNetSDK = null;
+            TypeDefinition netSDKIl2cppObject = null;
+            TypeDefinition netSDKIl2cppClass = null;
+            TypeDefinition netSDKIl2cppMethod = null;
+            MethodReference netSDKGetClass = null;
+            MethodReference netSDKGetMethod = null;
+            MethodReference netSDKInvoke0args = null;
+            MethodReference netSDKInvoke = null;
+            MethodReference netSDKUnbox = null;
+            MethodReference netSDKUnboxString = null;
+            if (!string.IsNullOrEmpty(netSDKPath) && File.Exists(netSDKPath))
+            {
+                netSDK = AssemblyDefinition.ReadAssembly(netSDKPath);
+                Assemblies.Add(netSDK);
+                resolver.Register(netSDK);
+                createdNetSDK = AssemblyDefinition.CreateAssembly(new AssemblyNameDefinition("GameAssembly", new Version("0.1.0.0")), "GameAssembly.dll", moduleParameters);
+                Assemblies.Add(createdNetSDK);
+                resolver.Register(createdNetSDK);
+                netSDKIl2cppObject = netSDK.MainModule.GetType("NET_SDK.Reflection", "IL2CPP_Object");
+                netSDKIl2cppClass = netSDK.MainModule.GetType("NET_SDK.Reflection", "IL2CPP_Class");
+                netSDKIl2cppMethod = netSDK.MainModule.GetType("NET_SDK.Reflection", "IL2CPP_Method");
+                netSDKGetClass = netSDK.MainModule.GetType("NET_SDK", "SDK").Methods.FirstOrDefault(m => m.Name == "GetClass" && m.Parameters.Count == 1 && m.Parameters[0].Name == "fullname");
+                netSDKGetMethod = netSDKIl2cppClass.Methods.FirstOrDefault(m => m.Name == "GetMethod" && m.Parameters.Count == 1);
+                netSDKInvoke0args = netSDKIl2cppMethod.Methods.FirstOrDefault(m => m.Name == "Invoke" && m.Parameters.Count == 1 && m.Parameters[0].ParameterType.FullName == netSDKIl2cppObject.FullName);
+                netSDKInvoke = netSDKIl2cppMethod.Methods.FirstOrDefault(m => m.Name == "Invoke" && m.Parameters.Count > 1 && m.Parameters[0].ParameterType.FullName == netSDKIl2cppObject.FullName);
+                netSDKUnbox = netSDKIl2cppObject.Methods.FirstOrDefault(m => m.Name == "Unbox");
+                netSDKUnboxString = netSDKIl2cppObject.Methods.FirstOrDefault(m => m.Name == "UnboxString");
+            }
 
             var fieldDefinitionDic = new Dictionary<int, FieldDefinition>();
             var methodDefinitionDic = new Dictionary<int, MethodDefinition>();
@@ -120,6 +151,12 @@ namespace Il2CppDumper
                     {
                         var parent = il2Cpp.types[typeDef.parentIndex];
                         isStruct = parent?.type == Il2CppTypeEnum.IL2CPP_TYPE_VALUETYPE;
+                    }
+                    TypeDefinition netSDKDefinition = null;
+                    if (netSDK != null)
+                    {
+                        netSDKDefinition = new TypeDefinition(typeDefinition.Namespace, typeDefinition.Name, (TypeAttributes)typeDef.flags);
+                        createdNetSDK.MainModule.Types.Add(netSDKDefinition);
                     }
 
                     //field
@@ -224,6 +261,180 @@ namespace Il2CppDumper
                             customAttribute.Fields.Add(offset);
                             methodDefinition.CustomAttributes.Add(customAttribute);
                         }
+                        if (netSDK != null)
+                        {
+                            // If we have NET SDK available, write the IL on the inside of this method to use NET_SDK
+                            // I'm not sure how much we would need to wrap, or if these DLLs will even be referencable,
+                            // but it's better than nothing, I suppose
+                            // Overall goal is to convert the parameters we have for the original function to IntPtrs,
+                            // or possibly IL2CPP_Objects and use those in the invoke call.
+
+                            // First we need to check our MethodDefinition's return type and parameter types/names to create the signature
+                            var netMethod = new MethodDefinition(methodDefinition.Name, (MethodAttributes)methodDef.flags | MethodAttributes.Static, netSDKDefinition.Module.ImportReference(typeof(void)));
+                            if (!netMethod.HasBody || typeDefinition.BaseType?.FullName == "System.MulticastDelegate")
+                            {
+                                goto end;
+                            }
+                            if (methodDefinition.IsConstructor)
+                                goto end;
+                            bool isPrimitive = methodDefinition.ReturnType.IsPrimitive;
+                            // TODO: Value types
+                            bool isStringReturn = methodDefinition.ReturnType.Equals(stringType);
+                            // Correct return type
+                            if (isPrimitive || isStringReturn)
+                                // Set it to a primitive, since we will unbox it to one here
+                                netMethod.ReturnType = methodDefinition.ReturnType;
+                            else
+                                // Set it to an IL2CPP_Object
+                                netMethod.ReturnType = createdNetSDK.MainModule.ImportReference(netSDKIl2cppObject);
+                            // Correct parameter types
+                            foreach (var param in methodDefinition.Parameters)
+                            {
+                                if (param.ParameterType != null)
+                                {
+                                    ParameterDefinition def = null;
+                                    if (param.ParameterType.Equals(stringType))
+                                        def = new ParameterDefinition(param.Name, param.Attributes, param.ParameterType);
+                                    else if (param.ParameterType.IsPrimitive)
+                                        def = new ParameterDefinition(param.Name, param.Attributes, param.ParameterType);
+                                    else
+                                        def = new ParameterDefinition(param.Name, param.Attributes, netSDKDefinition.Module.ImportReference(netSDKIl2cppObject));
+                                    netMethod.Parameters.Add(def);
+                                }
+                            }
+                            // If this method is an instance method, we need to also insert a 0th parameter of type IL2CPP_Object
+                            // This is for the 'self' parameter
+                            // Right now, just assume that no parameter will be called _self
+                            if (!methodDefinition.IsStatic)
+                                netMethod.Parameters.Insert(0, new ParameterDefinition("_self", ParameterAttributes.None, createdNetSDK.MainModule.ImportReference(netSDKIl2cppObject)));
+                            // We also need to make the method static (always)
+                            netMethod.IsStatic = true;
+
+                            // Initialize locals
+                            netMethod.Body.Variables.Add(new VariableDefinition(netSDKDefinition.Module.ImportReference(typeof(bool))));
+                            netMethod.Body.Variables.Add(new VariableDefinition(netSDKDefinition.Module.ImportReference(typeof(bool))));
+                            netMethod.Body.Variables.Add(new VariableDefinition(netSDKDefinition.Module.ImportReference(netMethod.ReturnType)));
+
+                            // Now we need to add the fields (if needed) for the IL2CPP_Class and IL2CPP_Method
+                            // Attempt to make or get the existing class getter
+                            var getClassProperty = EmitHelper.CreateClassGetter(netSDKDefinition, netSDKIl2cppClass, netSDKGetClass, typeDefinition.FullName);
+                            // We always have to make a new method field
+                            var getMethodProperty = EmitHelper.CreateMethodGetter(netSDKDefinition, netSDKIl2cppMethod, netSDKGetMethod, methodDefinition, getClassProperty.GetMethod);
+                            
+                            // Now we need to add the IL for getting the method (handled within CreateMethodGetter)
+                            var il = netMethod.Body.GetILProcessor();
+                            il.Emit(OpCodes.Nop);
+                            // Should not need to be imported, since it already exists in this type! (most of the time?)
+                            var importType = netSDKDefinition.Module.ImportReference(getMethodProperty.GetMethod);
+                            if (importType != null)
+                                il.Emit(OpCodes.Call, importType);
+                            else
+                                il.Emit(OpCodes.Call, getMethodProperty.GetMethod);
+
+                            // Now we need to provide all of the arguments necessary
+                            // If this is a non-static method, ldarg0 is the 'this' parameter
+                            // Otherwise, ldarg_1 is the first parameter
+                            // TODO: Fix generics eventually
+                            // First arg is the first non-instance argument
+                            int firstArg = 0;
+                            if (methodDefinition.IsStatic)
+                            {
+                                il.Emit(OpCodes.Ldnull);
+                            }
+                            else
+                            {
+                                il.Emit(OpCodes.Ldarg_0);
+                                firstArg = 1;
+                            }
+                            // The netMethod's parameters are identical to the IL2CPP_Method's parameters
+                            // If the method has 0 parameters, we need to call the instance invoke with either a null IL2CPP_Object or non-null
+                            // depending on if the method is static or not
+                            // If the method has more than 0 parameters, we need to call the instance invoke with either a null IL2CPP_Object, or non-null
+                            // depending on if the method is static or not followed by each of the arguments
+                            if (methodDefinition.Parameters.Count == 0)
+                            {
+                                il.Emit(OpCodes.Callvirt, netSDKDefinition.Module.ImportReference(netSDKInvoke0args));
+                            }
+                            else
+                            {
+                                // Load the length of the parameters
+                                EmitHelper.LdcI4(il, netMethod.Parameters.Count - firstArg);
+                                il.Emit(OpCodes.Newarr, netSDKDefinition.Module.ImportReference(typeof(object)));
+                                for (int pi = firstArg; pi < netMethod.Parameters.Count; pi++)
+                                {
+                                    il.Emit(OpCodes.Dup);
+                                    EmitHelper.LdcI4(il, pi - firstArg);
+                                    EmitHelper.Ldarg(il, pi);
+                                    if (netMethod.Parameters[pi].ParameterType.IsPrimitive)
+                                        il.Emit(OpCodes.Box, netSDKDefinition.Module.ImportReference(netMethod.Parameters[pi].ParameterType));
+                                    il.Emit(OpCodes.Stelem_Ref);
+                                }
+                                il.Emit(OpCodes.Callvirt, netSDKDefinition.Module.ImportReference(netSDKInvoke));
+                            }
+
+                            // If we are returning a primitive or a value type, we need to unbox it.
+                            // Otherwise, we need to just need to stloc2, br.s to the last two instructions
+                            bool success = true;
+                            if (isPrimitive)
+                            {
+                                il.Emit(OpCodes.Call, netSDKDefinition.Module.ImportReference(netSDKUnbox));
+                                // The unboxed value is a void*, we deref it according to the type of the actual return
+                                switch (netMethod.ReturnType.MetadataType)
+                                {
+                                    case MetadataType.Boolean:
+                                    case MetadataType.SByte:
+                                        il.Emit(OpCodes.Ldind_I1);
+                                        break;
+                                    case MetadataType.Byte:
+                                        il.Emit(OpCodes.Ldind_U1);
+                                        break;
+                                    case MetadataType.Char:
+                                    case MetadataType.UInt16:
+                                        il.Emit(OpCodes.Ldind_U2);
+                                        break;
+                                    case MetadataType.Double:
+                                        il.Emit(OpCodes.Ldind_R8);
+                                        break;
+                                    case MetadataType.Int16:
+                                        il.Emit(OpCodes.Ldind_I2);
+                                        break;
+                                    case MetadataType.Int32:
+                                        il.Emit(OpCodes.Ldind_I4);
+                                        break;
+                                    case MetadataType.Int64:
+                                        il.Emit(OpCodes.Ldind_I8);
+                                        break;
+                                    case MetadataType.Single:
+                                        il.Emit(OpCodes.Ldind_R4);
+                                        break;
+                                    case MetadataType.UInt32:
+                                        il.Emit(OpCodes.Ldind_U4);
+                                        break;
+                                    case MetadataType.UInt64:
+                                        il.Emit(OpCodes.Ldind_I8);
+                                        break;
+                                    default:
+                                        // We have failed! In this case, we will (in the future) attempt to convert the method
+                                        // back to an IL2CPP_Object
+                                        // but for now, we will just never add this method to the netSDK type's methods, that way
+                                        // even though the IL is all garbage, it isn't an issue.
+                                        success = false;
+                                        break;
+                                }
+                            }
+                            else if (isStringReturn)
+                            {
+                                il.Emit(OpCodes.Call, netSDKDefinition.Module.ImportReference(netSDKUnboxString));
+                            }
+                            il.Emit(OpCodes.Stloc_2);
+                            var branchEnd = Instruction.Create(OpCodes.Ldloc_2);
+                            il.Emit(OpCodes.Br_S, branchEnd);
+                            il.Append(branchEnd);
+                            il.Emit(OpCodes.Ret);
+                            if (success)
+                                netSDKDefinition.Methods.Add(netMethod);
+                        }
+                        end:;
                     }
                     //property
                     var propertyEnd = typeDef.propertyStart + typeDef.property_count;
@@ -556,7 +767,10 @@ namespace Il2CppDumper
                     var attributeType = assemblyDefinition.MainModule.GetType(attributeName);
                     if (attributeType != null)
                     {
-                        knownAttributes.Add(attributeName, attributeType.Methods.First(x => x.Name == ".ctor"));
+                        var ctor = attributeType.Methods.FirstOrDefault(x => x.Name == ".ctor");
+                        if (ctor == null)
+                            continue;
+                        knownAttributes.Add(attributeName, ctor);
                         break;
                     }
                 }

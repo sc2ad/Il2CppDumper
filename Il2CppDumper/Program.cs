@@ -278,11 +278,20 @@ namespace Il2CppDumper
             if (config.DummyDll)
             {
                 Console.WriteLine("Generate dummy dll...");
+                Console.WriteLine("Select style: 1.Original 2.Original+NET_SDK");
+                string netSDKPath = "";
+                switch (int.Parse(Console.ReadKey(true).KeyChar.ToString()))
+                {
+                    case 2:
+                        Console.WriteLine("Enter path to NET_SDK.dll: ");
+                        netSDKPath = Console.ReadLine().Trim();
+                        break;
+                }
                 if (Directory.Exists("DummyDll"))
                     Directory.Delete("DummyDll", true);
                 Directory.CreateDirectory("DummyDll");
                 Directory.SetCurrentDirectory("DummyDll");
-                var dummy = new DummyAssemblyGenerator(metadata, il2Cpp);
+                var dummy = new DummyAssemblyGenerator(metadata, il2Cpp, netSDKPath);
                 foreach (var assembly in dummy.Assemblies)
                 {
                     using (var stream = new MemoryStream())
