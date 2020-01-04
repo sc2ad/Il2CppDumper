@@ -148,6 +148,7 @@ namespace Il2CppDumper
             // Otherwise, set the field to IL2CPP_Class.GetMethod
             m.Emit(OpCodes.Call, getClassProperty);
             m.Emit(OpCodes.Ldstr, methodDefinition.Name);
+            LdcI4(m, methodDefinition.Parameters.Count);
             m.Emit(OpCodes.Call, def.Module.ImportReference(netSDKGetMethod));
             m.Emit(OpCodes.Stsfld, field);
             m.Append(skipGet);

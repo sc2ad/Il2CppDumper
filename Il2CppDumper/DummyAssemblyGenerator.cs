@@ -65,7 +65,7 @@ namespace Il2CppDumper
                 netSDKIl2cppClass = netSDK.MainModule.GetType("NET_SDK.Reflection", "IL2CPP_Class");
                 netSDKIl2cppMethod = netSDK.MainModule.GetType("NET_SDK.Reflection", "IL2CPP_Method");
                 netSDKGetClass = netSDK.MainModule.GetType("NET_SDK", "SDK").Methods.FirstOrDefault(m => m.Name == "GetClass" && m.Parameters.Count == 1 && m.Parameters[0].Name == "fullname");
-                netSDKGetMethod = netSDKIl2cppClass.Methods.FirstOrDefault(m => m.Name == "GetMethod" && m.Parameters.Count == 1);
+                netSDKGetMethod = netSDKIl2cppClass.Methods.FirstOrDefault(m => m.Name == "GetMethod" && m.Parameters.Count == 2 && m.Parameters[1].Name == "argCount");
                 netSDKInvoke0args = netSDKIl2cppMethod.Methods.FirstOrDefault(m => m.Name == "Invoke" && m.Parameters.Count == 1 && m.Parameters[0].ParameterType.FullName == netSDKIl2cppObject.FullName);
                 netSDKInvoke = netSDKIl2cppMethod.Methods.FirstOrDefault(m => m.Name == "Invoke" && m.Parameters.Count > 1 && m.Parameters[0].ParameterType.FullName == netSDKIl2cppObject.FullName);
                 netSDKUnbox = netSDKIl2cppObject.Methods.FirstOrDefault(m => m.Name == "Unbox");
@@ -281,12 +281,14 @@ namespace Il2CppDumper
                             // TODO: Value types
                             bool isStringReturn = methodDefinition.ReturnType.Equals(stringType);
                             // Correct return type
-                            if (isPrimitive || isStringReturn)
+                            if (isPrimitive)
                                 // Set it to a primitive, since we will unbox it to one here
                                 netMethod.ReturnType = methodDefinition.ReturnType;
+                            else if (isStringReturn)
+                                netMethod.ReturnType = netSDKDefinition.Module.ImportReference(typeof(string));
                             else
                                 // Set it to an IL2CPP_Object
-                                netMethod.ReturnType = createdNetSDK.MainModule.ImportReference(netSDKIl2cppObject);
+                                netMethod.ReturnType = netSDKDefinition.Module.ImportReference(netSDKIl2cppObject);
                             // Correct parameter types
                             foreach (var param in methodDefinition.Parameters)
                             {
@@ -294,7 +296,7 @@ namespace Il2CppDumper
                                 {
                                     ParameterDefinition def = null;
                                     if (param.ParameterType.Equals(stringType))
-                                        def = new ParameterDefinition(param.Name, param.Attributes, param.ParameterType);
+                                        def = new ParameterDefinition(param.Name, param.Attributes, netSDKDefinition.Module.ImportReference(typeof(string)));
                                     else if (param.ParameterType.IsPrimitive)
                                         def = new ParameterDefinition(param.Name, param.Attributes, param.ParameterType);
                                     else
